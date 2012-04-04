@@ -1,0 +1,8 @@
+.h340*
+.tmp_versions
+*~
+*.o
+*.ko
+*.mod.c
+*.symvers
+*.order
