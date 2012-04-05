@@ -2,13 +2,9 @@ Acer Aspire H340 Linux HDD LED Driver
 
 First, I've really only tested this on a recent kernel, particularly 3.2.13.
 
-If you try to compile it against your kernel and it doesn't work, let me know the version
-and I'll make an effort to get it working for that kernel version as well.
+If you try to compile it against your kernel and it doesn't work, let me know the version and I'll make an effort to get it working for that kernel version as well.
 
-The Makefile assumes you have a symlink in /lib/modules/<kernel version>/build that points
-to the linux source for your particular version.  This is not a crazy assumption.  A lot of
-distributions follow this pattern, but you can always change the makefile to point at your 
-kernel source whereever it may be.
+The Makefile assumes you have a symlink in /lib/modules/<kernel version>/build that points to the linux source for your particular version.  This is not a crazy assumption.  A lot of distributions follow this pattern, but you can always change the makefile to point at your kernel source whereever it may be.
 
 Just run 'make'
 And then 'insmod ./h340.ko' as root
