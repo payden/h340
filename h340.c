@@ -11,14 +11,18 @@
 #define DRIVER_DESC "H340 HDD LED driver, that's a lot of acronyms"
 #define H340_BASE 0x800
 #define H340_GP1 0x4b
+#define H340_GP5 0x4f
 
-/* Okay, for now, I'm going to assume that ata ports 1-4 correspond to sd[a-d]
- * because I'm unsure how to iterate through ata devices and deduce their major minor */
+#define SAMPLE_RATE 50
+#define HD1_RED 1 << 7
+#define HD1_BLUE 1 << 6
+#define HD2_RED 1 << 3
+#define HD2_BLUE 1 << 2
+#define HD3_RED 1 << 1
+#define HD3_BLUE 1 << 0
+#define HD4_RED 1 << 1
+#define HD4_BLUE 1 << 4
 
-#define SDA_DEV MKDEV(8, 0)
-#define SDB_DEV MKDEV(8, 16)
-#define SDC_DEV MKDEV(8, 32)
-#define SDD_DEV MKDEV(8, 48)
 
 
 struct tmp_stats {
@@ -31,11 +35,49 @@ static struct tmp_stats **h340_stats;
 static struct task_struct *h340_thread;
 
 static int h340_run(void *data) {
-	int i;
+	int i, cpu;
+	int partno = 0;
+	int blues[] = {6, 2, 0, 4};
+	int reds[] = {7, 3, 1, 1};
+	unsigned long int reads;
+	unsigned long int writes;
+	unsigned char gp5_val, gp1_val;
+	struct gendisk *gd;
 	struct tmp_stats *stats;
-	for(i=0;i<4;i++) {
-		stats = *(h340_stats+i);
-		printk(KERN_NOTICE "[h340][%d]: reads(%d) writes(%d)\n", i, stats->reads, stats->writes);
+	dev_t dev;
+	for(;;) {
+		gp5_val = gp1_val = 0;
+		if(kthread_should_stop()) {
+			outb(gp5_val, H340_BASE+H340_GP5);
+			outb(gp1_val, H340_BASE+H340_GP1);
+			do_exit(0);
+		}
+		for(i=0;i<4;i++) {
+			dev = MKDEV(8, i*16);
+			gd = get_gendisk(dev, &partno);
+			if(!gd) {
+				continue;
+			}
+			stats = *(h340_stats+i);
+			cpu = part_stat_lock();
+			part_round_stats(cpu, &gd->part0);
+			part_stat_unlock();
+			reads = part_stat_read(&gd->part0, ios[READ]);
+			writes = part_stat_read(&gd->part0, ios[WRITE]);
+			if(reads > stats->reads) {
+				if(i == 4) {
+					gp1_val |= blues[i];
+				}
+				else {
+					gp5_val |= blues[i];
+				}
+				stats->reads = reads;
+			}
+			stats->writes = writes;
+		}
+		outb(gp5_val, H340_BASE+H340_GP5);
+		outb(gp1_val, H340_BASE+H340_GP1);
+		msleep(SAMPLE_RATE);
 	}
 	return 0;
 }
@@ -43,7 +85,8 @@ static int h340_run(void *data) {
 static int __init h340_init(void)
 {
 	struct gendisk *gd;
-	int i, partno = 0, cpu;
+	int i, cpu;
+	int partno = 0;
 	dev_t dev;
 	printk(KERN_NOTICE "H340 HDD LED Init.\n");
 	h340_stats = (struct tmp_stats **)kmalloc(sizeof(*h340_stats) * 4, GFP_KERNEL);
@@ -52,14 +95,16 @@ static int __init h340_init(void)
 		return -ENOMEM;
 	}
 	for(i=0;i<4;i++) {
-		dev = MKDEV(8, i*3);
-		printk("dev for %d is %d\n", i, (int)dev);
+		*(h340_stats+i) = (struct tmp_stats *)kmalloc(sizeof(**h340_stats), GFP_KERNEL);
+		memset(*(h340_stats+i), 0, sizeof(**h340_stats));
+	}
+	for(i=0;i<4;i++) {
+		dev = MKDEV(8, i*16);
 		gd = get_gendisk(dev, &partno);
 		if(!gd) {
 			printk(KERN_NOTICE "No disk, continuing for %d\n", i);
 			continue;
 		}
-		*(h340_stats+i) = (struct tmp_stats *)kmalloc(sizeof(**h340_stats), GFP_KERNEL);
 		cpu = part_stat_lock();
 		part_round_stats(cpu, &gd->part0);
 		part_stat_unlock();
