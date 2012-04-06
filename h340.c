@@ -9,11 +9,14 @@
 
 #define DRIVER_AUTHOR "Payden Sutherland <payden@paydensutherland.com>"
 #define DRIVER_DESC "H340 HDD LED driver, that's a lot of acronyms"
+
 #define H340_BASE 0x800
 #define H340_GP1 0x4b
 #define H340_GP5 0x4f
-
+#define KTHREAD_NAME "h340d"
 #define SAMPLE_RATE 50
+
+/* these aren't used but they tell me which bits do what.
 #define HD1_RED 1 << 7
 #define HD1_BLUE 1 << 6
 #define HD2_RED 1 << 3
@@ -22,6 +25,7 @@
 #define HD3_BLUE 1 << 0
 #define HD4_RED 1 << 1
 #define HD4_BLUE 1 << 4
+*/
 
 
 
@@ -37,6 +41,7 @@ static struct task_struct *h340_thread;
 static int h340_run(void *data) {
 	int i, cpu;
 	int partno = 0;
+	//these map how many bits I need to shift for each drive LED
 	int blues[] = {6, 2, 0, 4};
 	int reds[] = {7, 3, 1, 1};
 	unsigned long int reads;
@@ -65,15 +70,23 @@ static int h340_run(void *data) {
 			reads = part_stat_read(&gd->part0, ios[READ]);
 			writes = part_stat_read(&gd->part0, ios[WRITE]);
 			if(reads > stats->reads) {
-				if(i == 4) {
-					gp1_val |= blues[i];
+				if(i == 3) {
+					gp1_val |= 1 << blues[i];
 				}
 				else {
-					gp5_val |= blues[i];
+					gp5_val |= 1 << blues[i];
 				}
 				stats->reads = reads;
 			}
-			stats->writes = writes;
+			if(writes > stats->writes) {
+				if(i == 3) {
+					gp1_val |= 1 << reds[i];
+				}
+				else {
+					gp5_val |= 1 << reds[i];
+				}
+				stats->writes = writes;
+			}
 		}
 		outb(gp5_val, H340_BASE+H340_GP5);
 		outb(gp1_val, H340_BASE+H340_GP1);
@@ -102,7 +115,7 @@ static int __init h340_init(void)
 		dev = MKDEV(8, i*16);
 		gd = get_gendisk(dev, &partno);
 		if(!gd) {
-			printk(KERN_NOTICE "No disk, continuing for %d\n", i);
+			printk(KERN_NOTICE "No disk, skipping sd%c\n", 97+i);
 			continue;
 		}
 		cpu = part_stat_lock();
@@ -112,7 +125,7 @@ static int __init h340_init(void)
 		(*(h340_stats+i))->writes = part_stat_read(&gd->part0, ios[WRITE]);
 	}
 
-	h340_thread = kthread_create(h340_run, NULL, "h340d");
+	h340_thread = kthread_create(h340_run, NULL, KTHREAD_NAME);
 	wake_up_process(h340_thread);
 	return 0;
 }
@@ -126,6 +139,7 @@ static void __exit h340_exit(void)
 		kfree(stats);
 	}
 	kfree(h340_stats);
+	kthread_stop(h340_thread);
 	printk(KERN_NOTICE "H340 HDD LED Exiting.\n");
 }
 
