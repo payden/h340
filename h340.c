@@ -26,6 +26,7 @@
 #include <linux/slab.h>
 #include <linux/mm.h>
 #include <linux/genhd.h>
+#include <asm/io.h>
 
 #define DRIVER_AUTHOR "Payden Sutherland <payden@paydensutherland.com>"
 #define DRIVER_DESC "H340 HDD LED driver, that's a lot of acronyms"
